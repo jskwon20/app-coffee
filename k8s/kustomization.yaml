@@ -3,7 +3,6 @@ kind: Kustomization
 
 resources:
   - billing.yaml
-  - certificate-secret.yaml
   - frontend.yaml
   - ingress-class.yaml
   - ingress-params.yaml
@@ -11,16 +10,4 @@ resources:
   - inventory.yaml
   - mysql.yaml
   - order.yaml
-
-replacements:
-  - source:
-      kind: Secret
-      name: certificate-arn
-      fieldPath: data.arn
-    targets:
-      - select:
-          kind: Ingress
-          name: coffee-ingress
-        fieldPaths:
-          - metadata.annotations.[alb.ingress.kubernetes.io/certificate-arn]
 
