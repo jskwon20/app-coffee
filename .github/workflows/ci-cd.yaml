@@ -5,16 +5,15 @@ on:
     branches: [ main ]
     paths:
       - 'services/**'
-      - 'frontend/**'
       - '.github/**'
 
 permissions:
   contents: write
 
 env:
-  AWS_REGION: ap-northeast-2 # 변경 필요
-  AWS_DEFAULT_REGION: ap-northeast-2 # 변경 필요
-  ECR_REPOSITORY_PREFIX: coffee-machine # 변경 필요
+  AWS_REGION: ap-northeast-2
+  AWS_DEFAULT_REGION: ap-northeast-2
+  ECR_REPOSITORY_PREFIX: coffee-machine
 
 jobs:
   build-and-push:
@@ -37,7 +36,6 @@ jobs:
         filters: |
           src:
             - 'services/${{ matrix.service }}/**'
-            - '${{ matrix.service }}/**'
             - '.github/**'
 
 
@@ -59,12 +57,8 @@ jobs:
         IMAGE_TAG: ${{ matrix.service }}-${{ github.sha }}
         LATEST_TAG: ${{ matrix.service }}-latest
       run: |
-        # Frontend는 경로가 다름
-        if [ "${{ matrix.service }}" == "frontend" ]; then
-          BUILD_CONTEXT="./frontend"
-        else
-          BUILD_CONTEXT="./services/${{ matrix.service }}"
-        fi
+        # All services are now in ./services directory
+        BUILD_CONTEXT="./services/${{ matrix.service }}"
         
         # 단일 리포지토리 사용 시 태그로 서비스 구분 (예: coffee_machine:order-commitsha, coffee_machine:order-latest)
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:$LATEST_TAG $BUILD_CONTEXT
