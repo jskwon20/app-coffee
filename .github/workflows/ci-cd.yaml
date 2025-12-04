@@ -1,0 +1,100 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'services/**'
+      - 'frontend/**'
+      - '.github/**'
+
+permissions:
+  contents: write
+
+env:
+  AWS_REGION: ap-northeast-2 # 변경 필요
+  AWS_DEFAULT_REGION: ap-northeast-2 # 변경 필요
+  ECR_REPOSITORY_PREFIX: coffee-machine # 변경 필요
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+    strategy:
+      matrix:
+        service: [order, inventory, billing, frontend]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Check for changes
+      uses: dorny/paths-filter@v2
+      id: changes
+      with:
+        filters: |
+          src:
+            - 'services/${{ matrix.service }}/**'
+            - '${{ matrix.service }}/**'
+            - '.github/**'
+
+
+
+    - name: Verify AWS Credentials
+      if: steps.changes.outputs.src == 'true'
+      run: aws sts get-caller-identity
+
+    - name: Login to Amazon ECR
+      if: steps.changes.outputs.src == 'true'
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Build, tag, and push image to Amazon ECR
+      if: steps.changes.outputs.src == 'true'
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: coffee_machine
+        IMAGE_TAG: ${{ matrix.service }}-${{ github.sha }}
+        LATEST_TAG: ${{ matrix.service }}-latest
+      run: |
+        # Frontend는 경로가 다름
+        if [ "${{ matrix.service }}" == "frontend" ]; then
+          BUILD_CONTEXT="./frontend"
+        else
+          BUILD_CONTEXT="./services/${{ matrix.service }}"
+        fi
+        
+        # 단일 리포지토리 사용 시 태그로 서비스 구분 (예: coffee_machine:order-commitsha, coffee_machine:order-latest)
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:$LATEST_TAG $BUILD_CONTEXT
+        
+        # Retry push with timeout
+        for i in {1..3}; do
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG && \
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$LATEST_TAG && break || sleep 10
+        done
+
+    - name: Update Kubernetes Manifest
+      if: steps.changes.outputs.src == 'true'
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: coffee_machine
+        IMAGE_TAG: ${{ matrix.service }}-${{ github.sha }}
+      run: |
+        # Configure Git
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git config --global user.name "github-actions[bot]"
+        
+        # Determine manifest file
+        MANIFEST_FILE="k8s/${{ matrix.service }}.yaml"
+        
+        # Update image tag using sed
+        # Matches "image: <anything>/coffee_machine:<anything>" and replaces it
+        sed -i "s|image: .*\/coffee_machine:.*|image: $ECR_REGISTRY\/$ECR_REPOSITORY:$IMAGE_TAG|g" $MANIFEST_FILE
+        
+        # Commit and push
+        git add $MANIFEST_FILE
+        git commit -m "Update ${{ matrix.service }} image tag to $IMAGE_TAG"
+        git pull --rebase origin main
+        git push

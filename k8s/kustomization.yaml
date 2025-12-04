@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - billing.yaml
+  - frontend.yaml
+  - ingress-class.yaml
+  - ingress-params.yaml
+  - ingress.yaml
+  - inventory.yaml
+  - mysql.yaml
+  - order.yaml
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: terraform-outputs
+      fieldPath: data.certificate_arn
+    targets:
+      - select:
+          kind: Ingress
+          name: coffee-ingress
+        fieldPaths:
+          - metadata.annotations.[alb.ingress.kubernetes.io/certificate-arn]
